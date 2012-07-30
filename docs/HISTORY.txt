@@ -1,6 +1,13 @@
 Changelog
 =========
 
+1.1 - UNRELEASED
+------------------
+
+* Make the contentrule work like plone.app.contenturules mail action
+  to have string interpolation
+  [erral]
+
 1.0 - Released
 ----------------
 
