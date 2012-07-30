@@ -1,3 +1,5 @@
+import logging
+import traceback
 from Acquisition import aq_inner
 from OFS.SimpleItem import SimpleItem
 from zope.component import adapts
@@ -5,15 +7,17 @@ from zope.component.interfaces import ComponentLookupError
 from zope.interface import Interface, implements
 from zope.formlib import form
 from zope import schema
-
+from smtplib import SMTPException
 from plone.app.contentrules.browser.formhelper import AddForm, EditForm 
 from plone.contentrules.rule.interfaces import IRuleElementData, IExecutable
-
+from plone.stringinterp.interfaces import IStringInterpolator
 from Products.CMFCore.utils import getToolByName
 from Products.CMFPlone import PloneMessageFactory as _
-from Products.CMFPlone.utils import safe_unicode
-
+from Products.MailHost.MailHost import MailHostError
+from Products.Five.browser.pagetemplatefile import ViewPageTemplateFile
 from collective.contentrules.mailadapter.interfaces import IRecipientsResolver
+
+logger = logging.getLogger("collective.contentrules.mailadapter")
 
 class IMailAction(Interface):
     """Definition of the configuration available for a mail action
@@ -70,10 +74,18 @@ class MailActionExecutor(object):
             raise ComponentLookupError, 'You must have a Mailhost utility to \
 execute this action'
 
-        source = self.element.source
         urltool = getToolByName(aq_inner(self.context), "portal_url")
         portal = urltool.getPortalObject()
         email_charset = portal.getProperty('email_charset')
+
+        obj = self.event.object
+
+        interpolator = IStringInterpolator(obj)
+        
+        source = self.element.source
+        if source:
+            source = interpolator(source).strip()
+        
         if not source:
             # no source provided, looking for the site wide from email
             # address
@@ -81,23 +93,32 @@ execute this action'
             if not from_address:
                 raise ValueError, 'You must provide a source address for this \
 action or enter an email in the portal properties'
+
             from_name = portal.getProperty('email_from_name')
             source = "%s <%s>" % (from_name, from_address)
 
-        obj = self.event.object
-        event_title = safe_unicode(obj.Title())
-        event_url = obj.absolute_url()
-        message = self.element.message.replace("${url}", event_url)
-        message = message.replace("${title}", event_title)
+        # prepend interpolated message with \n to avoid interpretation
+        # of first line as header
+        message = "\n%s" % interpolator(self.element.message)
 
-        subject = self.element.subject.replace("${url}", event_url)
-        subject = subject.replace("${title}", event_title)
+        subject = interpolator(self.element.subject)
 
         for email_recipient in recipients:
-            mailhost.secureSend(message, email_recipient, source,
-                                subject=subject, subtype='plain',
-                                charset=email_charset, debug=False,
-                                From=source)
+            try:
+                # XXX: We're using "immediate=True" because otherwise we won't
+                # be able to catch SMTPException as the smtp connection is made
+                # as part of the transaction apparatus.
+                # AlecM thinks this wouldn't be a problem if mail queuing was
+                # always on -- but it isn't. (stevem)
+                # so we test if queue is not on to set immediate
+                mailhost.send(message, email_recipient, source,
+                              subject=subject, charset=email_charset,
+                              immediate=not mailhost.smtp_queue)
+            except (MailHostError, SMTPException):
+                logger.error(
+                    """mailing error: Attempt to send mail in content rule failed.\n%s""" %
+                    traceback.format_exc())            
+
         return True
 
 class MailAddForm(AddForm):
@@ -122,3 +143,6 @@ class MailEditForm(EditForm):
     label = _(u"Edit Mail Action")
     description = _(u"A mail action can mail different recipient.")
     form_name = _(u"Configure element")
+
+    # custom template will allow us to add help text
+    template = ViewPageTemplateFile('mail.pt')
