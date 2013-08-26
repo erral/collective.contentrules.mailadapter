@@ -28,5 +28,7 @@ setup(name='collective.contentrules.mailadapter',
       ],
       entry_points="""
       # -*- Entry points: -*-
+      [z3c.autoinclude.plugin]
+      target = plone
       """,
       )
