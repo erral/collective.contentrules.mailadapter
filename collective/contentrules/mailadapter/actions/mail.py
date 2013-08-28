@@ -120,6 +120,9 @@ class MailAddForm(AddForm):
     description = _(u"A mail action can mail different recipient.")
     form_name = _(u"Configure element")
 
+    # custom template will allow us to add help text
+    template = ViewPageTemplateFile('mail.pt')
+
     def create(self, data):
         a = MailAction()
         form.applyChanges(a, self.form_fields, data)
