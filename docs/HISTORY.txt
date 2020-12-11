@@ -1,6 +1,12 @@
 Changelog
 =========
 
+1.1 (unreleased)
+----------------
+
+- Nothing changed yet.
+
+
 1.1cs1 (2020-12-11)
 -------------------
 
